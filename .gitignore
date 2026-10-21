@@ -1,0 +1,42 @@
+# Local configuration and credentials (keep shareable templates)
+/config.ini
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# MTProto sessions and runtime data
+/workdir/
+*.session*
+/allowlist.json
+/downloads/
+*.log
+*.log.*
+/logs/
+
+# Python environments and generated files
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local agent state and editor/OS files
+/.aws/
+/.codex/
+/.agents/
+.idea/
+.vscode/
+.DS_Store
+*~

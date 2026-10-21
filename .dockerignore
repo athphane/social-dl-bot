@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+bot.log
+.git/
+.gitignore
+config.ini
+allowlist.json
+workdir/
+*.session*

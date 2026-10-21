@@ -1,0 +1,4 @@
+pyrotgfork==2.2.24
+tgcrypto==1.2.5
+yt-dlp[default,curl-cffi]>=2026.7.4
+aiohttp>=3.10.0

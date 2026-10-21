@@ -1,0 +1,12 @@
+[pyrogram]
+# Application credentials from https://my.telegram.org/apps
+api_id =
+api_hash =
+# Keep the token for this bot from @BotFather
+bot_token =
+# Persist this directory; it stores this bot's MTProto session
+workdir = workdir
+
+[proxy]
+# Optional proxy for media downloads (does not proxy the Telegram connection)
+socks5_proxy =

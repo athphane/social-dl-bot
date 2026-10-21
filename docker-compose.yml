@@ -1,0 +1,14 @@
+services:
+  social-dl-bot:
+    build: .
+    container_name: social-dl-bot
+    restart: unless-stopped
+    volumes:
+      # Mount the config file so you can update it without rebuilding
+      - ./config.ini:/app/config.ini:ro
+      # Persist the allowlist so DM access survives container restarts
+      - ./allowlist.json:/app/allowlist.json
+      # Keep logs persistent
+      - ./bot.log:/app/bot.log
+      # Persist the MTProto login across container rebuilds and restarts
+      - ./workdir:/app/workdir
