@@ -1,12 +1,12 @@
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
-# TgCrypto needs a compiler on Python 3.12; keep build tools out of runtime.
+# Allow source builds when dependency wheels are unavailable; keep build tools out of runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 LABEL description="Social Downloader Bot - Auto-download TikTok, Instagram, YouTube Shorts"
 

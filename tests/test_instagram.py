@@ -10,8 +10,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.downloader import download_video
-from bot.handlers import process_and_upload, send_photo
-from bot.instagram import download_instagram_photo, photo_details, render_photo, run_process, _fetch_photo
+from bot.handlers import process_and_upload, send_photo, send_photos
+from bot.instagram import download_instagram_photo, photo_post_details, photo_details, render_photo, run_process, _fetch_photo
 from pyrogram.errors import BadRequest
 
 
@@ -31,6 +31,16 @@ def photo_media():
 
 
 class MetadataTests(unittest.TestCase):
+    def test_carousel_preserves_order_and_rejects_mixed_media(self):
+        first = photo_media()
+        second = {'__typename': 'GraphImage', 'display_url': 'https://example.com/second.jpg'}
+        for media in ({'carousel_media': [first, second]},
+                      {'edge_sidecar_to_children': {'edges': [{'node': first}, {'node': second}]}}):
+            details = photo_post_details(media)
+            self.assertEqual([p['image_url'] for p in details['photos']],
+                             ['https://example.com/photo.jpg', 'https://example.com/second.jpg'])
+        self.assertIsNone(photo_post_details({'carousel_media': [first, {'is_video': True}]}))
+
     def test_photo_music_and_clip_timing(self):
         details = photo_details(photo_media())
         self.assertEqual(details['image_url'], 'https://example.com/photo.jpg')
@@ -166,6 +176,49 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
                     await process_and_upload(message, 'https://instagram.com/reel/ABC/')
                 message.reply_photo.assert_awaited_once()
                 self.assertFalse(os.path.exists(directory))
+
+    async def test_carousel_uploads_every_photo_and_cleans_up(self):
+        directory = tempfile.mkdtemp()
+        paths = [str(Path(directory, f'{i}.jpg')) for i in range(3)]
+        for path in paths:
+            Path(path).write_bytes(b'image')
+        result = {'success': True, 'file_path': paths[0], 'file_paths': paths,
+                  'media_type': 'photos', 'title': 'Album', 'download_url': 'url',
+                  'temp_dir': directory}
+        message = SimpleNamespace(reply_text=AsyncMock(return_value=AsyncMock()),
+                                  reply_photo=AsyncMock(), reply_media_group=AsyncMock())
+        with patch('bot.handlers.download_video', return_value=result):
+            await process_and_upload(message, 'https://instagram.com/p/ABC/')
+        album = message.reply_media_group.await_args.args[0]
+        self.assertEqual([photo.media for photo in album], paths)
+        self.assertEqual([photo.caption for photo in album], ['Album\nurl', '', ''])
+        message.reply_photo.assert_not_awaited()
+        self.assertFalse(os.path.exists(directory))
+
+    async def test_album_batch_boundaries(self):
+        for count, sizes, singles in ((7, [7], 0), (10, [10], 0),
+                                      (11, [10], 1), (20, [10, 10], 0)):
+            with self.subTest(count=count):
+                message = SimpleNamespace(reply_media_group=AsyncMock(), reply_photo=AsyncMock())
+                paths = [f'{i}.jpg' for i in range(count)]
+                await send_photos(message, paths, 'caption')
+                albums = [call.args[0] for call in message.reply_media_group.await_args_list]
+                self.assertEqual([len(album) for album in albums], sizes)
+                delivered = [photo.media for album in albums for photo in album]
+                delivered += [call.args[0] for call in message.reply_photo.await_args_list]
+                self.assertEqual(delivered, paths)
+                self.assertEqual(message.reply_photo.await_count, singles)
+                captions = [photo.caption for album in albums for photo in album]
+                captions += [call.kwargs['caption'] for call in message.reply_photo.await_args_list]
+                self.assertEqual(captions, ['caption'] + [''] * (count - 1))
+
+    async def test_rejected_album_falls_back_to_individual_images(self):
+        message = SimpleNamespace(reply_media_group=AsyncMock(side_effect=BadRequest('dimensions')),
+                                  reply_photo=AsyncMock(side_effect=BadRequest('dimensions')),
+                                  reply_document=AsyncMock())
+        await send_photos(message, ['1.jpg', '2.jpg'], 'caption')
+        self.assertEqual([call.args[0] for call in message.reply_document.await_args_list],
+                         ['1.jpg', '2.jpg'])
 
     async def test_rejected_photo_sent_as_document(self):
         with tempfile.NamedTemporaryFile() as photo:
