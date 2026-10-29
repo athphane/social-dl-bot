@@ -6,10 +6,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from pyrogram import Client
 from pyrogram.enums import ChatMemberStatus, ChatType, ParseMode
+from pyrogram.errors import BadRequest
 from pyrogram.types import Chat, Message, User
 
 from bot.access import is_user_allowed
-from bot.handlers import MAX_FILE_SIZE, process_and_upload, register_handlers
+from bot.handlers import MAX_FILE_SIZE, process_and_upload, register_handlers, send_photo
 from main import build_client
 
 
@@ -43,8 +44,40 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args['reply_parameters'].message_id, 42)
         self.assertTrue(args['supports_streaming'])
         self.assertEqual(args['parse_mode'], ParseMode.DISABLED)
+        status_args = client.send_message.await_args.kwargs
+        self.assertEqual(status_args['reply_parameters'].message_id, 42)
+        self.assertTrue(status_args['disable_notification'])
         status.delete.assert_awaited_once()
         self.assertFalse(Path(directory).exists())
+
+    async def test_photo_and_document_fallback_reply_to_source_message(self):
+        for rejected in (False, True):
+            with self.subTest(photo_rejected=rejected):
+                client = SimpleNamespace(
+                    send_photo=AsyncMock(spec=Client.send_photo),
+                    send_document=AsyncMock(spec=Client.send_document),
+                )
+                if rejected:
+                    client.send_photo.side_effect = BadRequest('photo rejected')
+                message = Message(
+                    id=42, chat=Chat(id=-100123, type=ChatType.SUPERGROUP),
+                    client=client,
+                )
+                await send_photo(message, 'photo.jpg', 'A <b>caption</b>')
+
+                client.send_photo.assert_awaited_once()
+                methods = [client.send_photo]
+                if rejected:
+                    client.send_document.assert_awaited_once()
+                    methods.append(client.send_document)
+                else:
+                    client.send_document.assert_not_awaited()
+                for method in methods:
+                    args = method.await_args.kwargs
+                    self.assertEqual(args['chat_id'], -100123)
+                    self.assertEqual(args['reply_parameters'].message_id, 42)
+                    self.assertEqual(args['caption'], 'A <b>caption</b>')
+                    self.assertEqual(args['parse_mode'], ParseMode.DISABLED)
 
     async def test_oversized_video_is_rejected_before_upload(self):
         directory = tempfile.mkdtemp()

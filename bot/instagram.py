@@ -85,6 +85,26 @@ def photo_details(media):
     }
 
 
+def photo_post_details(media):
+    """Accept a single photo or an entirely photographic carousel in order."""
+    children = media.get('carousel_media')
+    if children is None and media.get('edge_sidecar_to_children'):
+        children = [edge.get('node') or {} for edge in
+                    media['edge_sidecar_to_children'].get('edges', [])]
+    if children is None:
+        return photo_details(media)
+    if not children or len(children) > 20:
+        return None
+    photos = [photo_details(child) for child in children]
+    if any(photo is None for photo in photos):
+        return None
+    caption = media.get('caption') or {}
+    title = caption.get('text') if isinstance(caption, dict) else caption
+    edges = (media.get('edge_media_to_caption') or {}).get('edges') or []
+    title = title or ((edges[0].get('node') or {}).get('text') if edges else None)
+    return {'photos': photos, 'title': title or 'Instagram photos'}
+
+
 def _download_asset(client, url, path):
     if not isinstance(url, str) or not url.startswith('https://'):
         raise ValueError('Invalid Instagram asset URL')
@@ -121,13 +141,20 @@ def _fetch_photo(url, temp_dir, proxy, user_agent):
                     data = json.loads(response.read(8 * 1024 * 1024))['data']
                 items = (data.get('xdt_api__v1__media__shortcode__web_info') or {}).get('items') or []
                 media = items[0] if items else data.get('xdt_shortcode_media') or {}
-                details = photo_details(media)
+                details = photo_post_details(media)
                 if details:
                     break
             except Exception:
                 LOGGER.debug('Instagram photo metadata query failed', exc_info=True)
         if not details:
             return None
+        if details.get('photos'):
+            details['image_paths'] = []
+            for index, photo in enumerate(details['photos']):
+                path = os.path.join(temp_dir, f'instagram-photo-{index + 1}.jpg')
+                _download_asset(client, photo['image_url'], path)
+                details['image_paths'].append(path)
+            return details
         image_path = os.path.join(temp_dir, 'instagram-photo.jpg')
         _download_asset(client, details['image_url'], image_path)
         details['image_path'] = image_path
@@ -174,6 +201,13 @@ async def download_instagram_photo(url, temp_dir, proxy, user_agent):
         raise
     if not details:
         return None
+    if details.get('image_paths'):
+        return {
+            'success': True, 'file_path': details['image_paths'][0],
+            'file_paths': details['image_paths'], 'media_type': 'photos',
+            'title': details['title'], 'platform': 'Instagram',
+            'download_url': url, 'temp_dir': temp_dir,
+        }
     result = {
         'success': True, 'file_path': details['image_path'], 'media_type': 'photo',
         'title': details['title'], 'platform': 'Instagram',

@@ -15,7 +15,7 @@ from pyrogram import Client, filters
 from pyrogram.enums import ChatType, ParseMode
 from pyrogram.errors import BadRequest
 from pyrogram.handlers import MessageHandler
-from pyrogram.types import Message
+from pyrogram.types import InputMediaPhoto, Message
 
 from bot.access import (
     add_user,
@@ -33,7 +33,7 @@ from bot.limits import MAX_VIDEO_SIZE
 
 LOGGER = logging.getLogger(__name__)
 
-# Non-premium MTProto upload limit enforced by pyrotgfork.
+# Non-premium MTProto upload limit enforced by Kurigram.
 MAX_FILE_SIZE = MAX_VIDEO_SIZE
 
 
@@ -282,7 +282,7 @@ def register_handlers(app: Client, socks5_proxy=None):
         original_url = match.group(0)
         await process_and_upload(message, original_url, socks5_proxy)
 
-    # Pyrogram runs the first matching handler in a group, as the old client did.
+    # Kurigram runs the first matching handler in a group.
     incoming_text = filters.incoming & filters.text
     for command, callback in (
         ("start", start_command), ("help", help_command), ("dl", dl_command),
@@ -323,7 +323,7 @@ async def process_and_upload(message: Message, url: str, socks5_proxy=None):
     # Status message
     status_msg = await message.reply_text(
         f"⬇️ Downloading {platform} media...",
-        disable_notification=True, quote=True,
+        disable_notification=True,
     )
 
     result = None
@@ -360,13 +360,15 @@ async def process_and_upload(message: Message, url: str, socks5_proxy=None):
         # Build caption
         caption = f"{result['title']}\n{result['download_url']}"[:1024]
 
-        if media_type == "photo":
+        if media_type == "photos":
+            await send_photos(message, result["file_paths"], caption)
+        elif media_type == "photo":
             await send_photo(message, file_path, caption)
         else:
             try:
                 await message.reply_video(
                     file_path, caption=caption, supports_streaming=True,
-                    quote=True, parse_mode=ParseMode.DISABLED,
+                    parse_mode=ParseMode.DISABLED,
                 )
             except Exception:
                 if not result.get("fallback_image_path"):
@@ -392,13 +394,33 @@ async def process_and_upload(message: Message, url: str, socks5_proxy=None):
                 pass
 
 
+async def send_photos(message, file_paths, caption):
+    """Send ordered albums of up to ten photos, with one caption per post."""
+    for start in range(0, len(file_paths), 10):
+        batch = file_paths[start:start + 10]
+        batch_caption = caption if start == 0 else ""
+        if len(batch) == 1:
+            await send_photo(message, batch[0], batch_caption)
+            continue
+        try:
+            await message.reply_media_group([
+                InputMediaPhoto(path, caption=batch_caption if index == 0 else "",
+                                parse_mode=ParseMode.DISABLED)
+                for index, path in enumerate(batch)
+            ])
+        except BadRequest:
+            # Preserve the existing document fallback for rejected images.
+            for index, path in enumerate(batch):
+                await send_photo(message, path, batch_caption if index == 0 else "")
+
+
 async def send_photo(message, file_path, caption):
     """Send as a photo, or as the original image file if Telegram rejects it."""
     try:
         await message.reply_photo(
-            file_path, caption=caption, quote=True, parse_mode=ParseMode.DISABLED,
+            file_path, caption=caption, parse_mode=ParseMode.DISABLED,
         )
     except BadRequest:
         await message.reply_document(
-            file_path, caption=caption, quote=True, parse_mode=ParseMode.DISABLED,
+            file_path, caption=caption, parse_mode=ParseMode.DISABLED,
         )

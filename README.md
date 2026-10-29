@@ -3,7 +3,7 @@
 A Telegram bot that auto-downloads **TikTok**, **Instagram Reels**, and **YouTube Shorts** when links are shared in a group.
 
 Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and
-[pyrotgfork](https://github.com/TelegramPlayground/PyroTGFork), using Telegram's
+[Kurigram](https://github.com/KurimuzonAkuma/kurigram), using Telegram's
 MTProto API for bot login, messages, and uploads.
 
 ## Features
@@ -53,13 +53,34 @@ own session file. The proxy above applies to media downloads only.
 
 ### 3. Install Dependencies
 
+Use Python 3.15, the latest stable Python series. Both Docker stages and
+`.python-version` select this series and allow newer 3.15 patch releases.
+Create a fresh virtual environment when upgrading from an older Python:
+
 ```bash
-pip install -r requirements.txt
+python3.15 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-Use Python 3.10 or newer. TgCrypto may need a C compiler and Python development
-headers to install locally (for example, `build-essential` and `python3-dev` on
-Debian/Ubuntu). The Docker build compiles it automatically.
+The Telegram dependencies are Kurigram and
+TgCrypto-pyrofork. If upgrading an existing virtual environment, remove the old
+packages before installing the requirements, since they share import names:
+
+```bash
+python -m pip uninstall -y pyrotgfork TgCrypto
+python -m pip install --upgrade --upgrade-strategy eager -r requirements.txt
+```
+
+Kurigram retains the `pyrogram` import name and `[pyrogram]` config section.
+Keep the existing session in `workdir/` when upgrading.
+
+For future updates, rerun the install command above to upgrade all dependencies,
+including yt-dlp and its default and curl-cffi extras.
+
+TgCrypto-pyrofork needs a C compiler and matching Python 3.15 development
+headers if no wheel is available. The Docker build includes these tools in
+its builder stage and supports compiling it automatically.
 
 Make sure `yt-dlp` is installed:
 ```bash
@@ -137,7 +158,7 @@ These platforms work with `/dl` command only:
 - Check the `bot.log` file for errors
 
 **"File too large"**
-- The bot uploads through MTProto, with pyrotgfork's 2000 MiB limit for bot
+- The bot uploads through MTProto, with Kurigram's 2000 MiB limit for bot
   sessions. Videos above 50 MB can be uploaded without a local Bot API server.
 
 ## License
